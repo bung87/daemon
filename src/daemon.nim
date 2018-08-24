@@ -6,17 +6,49 @@ import os
 import posix
 import strutils
 
+const 
+    DEVNULL = "/dev/null"
+    VARRUN = "/var/run"
+    STD_ERR_LOG = "daemon-nim-stderr.log"
+    STD_OUT_LOG = "daemon-nim-stdout.log"
+    STD_IN_LOG = "daemon-nim-stdin.log"
+    pid_file =  "daemon-nim.pid"
 
-type Daemon = object {.inheritable.}
+type Daemon* = ref object of RootObj
+    # DaemonRef* = ref of Daemon
     pidfile:string
-    stdin:string #=devnull
-    stdout:string #=devnull
-    stderr:string #=devnull,
+    stdin:File #=devnull
+    stdout:File #=devnull
+    stderr:File #=devnull,
     home_dir:string #='.', 
     umask:Mode #=0o22, 
     verbose:int #=1,
     daemon_alive:bool
+# ,stdin,stdout,stderr:string = DEVNULL,home_dir:string,umask:Mode = 0o22,verbose:int = 1
+proc newDaemon*(pidfile:string = VARRUN / pid_file, stdin:File = stdin,stdout:File=stdout,stderr:File=stderr,home_dir:string="",umask:Mode = 0o22,verbose:int = 1): Daemon =
+    # stdin,stdout,stderr:string = DEVNULL,\
+    # stdout:string = DEVNULL,\
+    # stderr:string = DEVNULL,\
+    # home_dir:string,\
+    # umask:Mode = 0o22,\
+    # verbose:int = 1): Daemon =
 
+    result = Daemon()
+
+    result.pidfile = pidfile
+    result.stdin = stdin
+    result.stdout = stdout
+    result.stderr = stderr
+    if home_dir.len > 0:
+        result.home_dir = home_dir
+        try:
+            setCurrentDir(home_dir)
+        except OSError:
+            discard
+    else:
+        result.home_dir = getCurrentDir()
+    result.umask = umask
+    result.verbose = verbose
 
 method log(self:Daemon, args:varargs[string, `$`]) =
     if self.verbose >= 1:
@@ -35,7 +67,10 @@ method daemonize(self:Daemon) =
         # Exit first parent
         exitnow(0)
     # Decouple from parent environment
-    discard chdir(self.home_dir)
+    try:
+        discard chdir(self.home_dir)
+    except:
+        discard
     discard setsid()
     discard umask(self.umask)
 
@@ -51,34 +86,40 @@ method daemonize(self:Daemon) =
         exitnow(0)
     # if platform != "darwin":  # This block breaks on OS X
         # Redirect standard file descriptors
-    stdout.flushFile()
-    stderr.flushFile()
-    let si = open(self.stdin, fmRead)
-    let so = open(self.stdout, fmAppend)
-    var se:File
-    if self.stderr.len > 0:
-        try:
-            se = open(self.stderr, fmAppend, 0)
-        except ValueError:
-            # Python 3 can't have unbuffered text I/O
-            se = open(self.stderr, fmAppend, 1)
-    else:
-        se = so
-    discard dup2( c_fileno(si), c_fileno(stdin))
-    discard dup2( c_fileno(so), c_fileno(stdout))
-    discard dup2( c_fileno(se), c_fileno(stderr))
+    self.stdout.flushFile()
+    self.stderr.flushFile()
+    discard reopen(self.stdin,STD_IN_LOG, fmRead)
+    discard reopen(self.stdout,STD_OUT_LOG, fmAppend)
+    discard reopen(self.stderr, STD_ERR_LOG,fmAppend)
+    # var se:File
+    
+    # if self.stderr:
+    # try:
+    #     discard reopen(self.stderr, STD_ERR_LOG,fmAppend, 0)
+    # except ValueError:
+    #     # Python 3 can't have unbuffered text I/O
+    #     discard reopen(self.stderr, STD_ERR_LOG,fmAppend, 1)
+    # except:
+    #     se = so
+    # discard dup2( c_fileno(si), c_fileno(stdin))
+    # discard dup2( c_fileno(so), c_fileno(stdout))
+    # discard dup2( c_fileno(se), c_fileno(stderr))
 
     onSignal(SIGTERM,SIGINT):
         # self.daemon_alive = false
+        echo "on signal"
         exitnow(0)
 
     self.log("Started")
-
     # Write pidfile
     # atexit.register(
     #     self.delpid)  # Make sure pid file is removed if we quit
-    # pid = str(getpid())
-    # open(self.pidfile, "w+").write("%s\n" % pid)
+    pid = getpid()
+    try:
+        open(self.pidfile, fmWrite).write("$#\n" % $pid)
+    except:
+        self.pidfile = "/tmp" / pid_file
+        open(self.pidfile, fmWrite).write("$#\n" % $pid)
 
 method delpid(self:Daemon) =
     var pid:int = -1
@@ -94,7 +135,7 @@ method delpid(self:Daemon) =
 
 method run (self:Daemon) = discard
     
-method start(self:Daemon) =
+method start*(self:Daemon){.base.} =
    
     self.log("Starting...")
     var mpid:int = -1
@@ -108,7 +149,7 @@ method start(self:Daemon) =
 
     if mpid != -1:
         let message = r"pidfile $# already exists. Is it already running?\n"
-        stderr.write(message % [self.pidfile])
+        self.stderr.write(message % [self.pidfile])
         exitnow(1)
 
     # Start the daemon
@@ -130,7 +171,7 @@ method stop(self:Daemon) =
         discard
     if mpid != -1:
         let message = "pidfile %s does not exist. Not running?\n"
-        stderr.write(message % self.pidfile)
+        self.stderr.write(message % self.pidfile)
 
         # Just to be sure. A ValueError might occur if the PID file is
         # empty but does actually exist
@@ -175,7 +216,7 @@ method get_pid(self:Daemon):int =
     #     pid = nil
     return pid
 
-method is_running(self:Daemon):bool =
+method is_running*(self:Daemon):bool =
     let pid = self.get_pid()
 
     if pid == -1:
@@ -188,3 +229,11 @@ method is_running(self:Daemon):bool =
         self.log("Process (pid $#) is killed" % $pid)
         return false
 
+when isMainModule:
+    type MineDaemon = ref object of Daemon
+    method run(self:MineDaemon) =
+        while true:
+            echo 1
+            sleep(1)
+    var d = newDaemon()
+    d.start()
