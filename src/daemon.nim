@@ -25,7 +25,7 @@ type Daemon* = ref object of RootObj
     verbose:int #=1,
     daemon_alive:bool
 # ,stdin,stdout,stderr:string = DEVNULL,home_dir:string,umask:Mode = 0o22,verbose:int = 1
-proc newDaemon*(pidfile:string = VARRUN / pid_file, stdin:File = stdin,stdout:File=stdout,stderr:File=stderr,home_dir:string="",umask:Mode = 0o22,verbose:int = 1): Daemon =
+method initDaemon*(self:Daemon,pidfile:string = VARRUN / pid_file, stdin:File = stdin,stdout:File=stdout,stderr:File=stderr,home_dir:string="",umask:Mode = 0o22,verbose:int = 1) =
     # stdin,stdout,stderr:string = DEVNULL,\
     # stdout:string = DEVNULL,\
     # stderr:string = DEVNULL,\
@@ -33,22 +33,22 @@ proc newDaemon*(pidfile:string = VARRUN / pid_file, stdin:File = stdin,stdout:Fi
     # umask:Mode = 0o22,\
     # verbose:int = 1): Daemon =
 
-    result = Daemon()
+    # result = Daemon()
 
-    result.pidfile = pidfile
-    result.stdin = stdin
-    result.stdout = stdout
-    result.stderr = stderr
+    self.pidfile = pidfile
+    self.stdin = stdin
+    self.stdout = stdout
+    self.stderr = stderr
     if home_dir.len > 0:
-        result.home_dir = home_dir
+        self.home_dir = home_dir
         try:
             setCurrentDir(home_dir)
         except OSError:
             discard
     else:
-        result.home_dir = getCurrentDir()
-    result.umask = umask
-    result.verbose = verbose
+        self.home_dir = getCurrentDir()
+    self.umask = umask
+    self.verbose = verbose
 
 method log(self:Daemon, args:varargs[string, `$`]) =
     if self.verbose >= 1:

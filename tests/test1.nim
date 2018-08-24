@@ -7,5 +7,6 @@ method run(self:MineDaemon) =
     while true:
         echo self.is_running()
         sleep(1)
-var d = newDaemon()
+var d = new(MineDaemon)
+d.initDaemon()
 d.start()
