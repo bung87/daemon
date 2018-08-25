@@ -236,7 +236,7 @@ proc stop(self:Daemon) =
         var i = 0
         while true:
             discard kill(getPid(), SIGTERM)
-            sleep(6)
+            sleep(6000)
             i = i + 1
             if i div 10 == 0:
                 discard kill(getPid(), SIGHUP)
