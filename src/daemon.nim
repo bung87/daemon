@@ -90,7 +90,6 @@ proc delpid(){.noconv.} =
             discard
         else:
             raise
-    echo getpid(),pid
     if pid == getpid():
         removeFile(glPidPath)
 
