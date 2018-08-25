@@ -1,7 +1,7 @@
 # daemon
 # Copyright zhoupeng
 # daemonizer for Unix, Linux and OS X
-# import private/oop
+
 import os
 import posix
 import strutils
@@ -14,6 +14,8 @@ const
     STD_IN_LOG = "daemon-nim-stdin.log"
     DEFAULT_PID_FILE =  "daemon-nim.pid"
     TMP = "/tmp"
+    defaultPidPath = when defined(macosx): TMP / DEFAULT_PID_FILE
+    else: VARRUN / DEFAULT_PID_FILE
 
 type 
     Daemon* = object of RootObj
@@ -31,7 +33,7 @@ type
 
 var glPidPath:string
 
-proc initDaemon*(pidfile:string = VARRUN / DEFAULT_PID_FILE, stdin:File = stdin,stdout:File=stdout,stderr:File=stderr,home_dir:string="",umask:Mode = 0o22,verbose:int = 1):Daemon{.noInit.}= 
+proc initDaemon*(pidfile:string = defaultPidPath, stdin:File = stdin,stdout:File=stdout,stderr:File=stderr,home_dir:string="",umask:Mode = 0o22,verbose:int = 1):Daemon{.noInit.}= 
     var 
         result = Daemon()
         pidpath = pidfile
@@ -39,13 +41,12 @@ proc initDaemon*(pidfile:string = VARRUN / DEFAULT_PID_FILE, stdin:File = stdin,
     try:
         file = open(pidpath,fmReadWrite)
     except IOError:
-        if pidpath != VARRUN / DEFAULT_PID_FILE:
-            pidpath =  VARRUN / DEFAULT_PID_FILE
+        if pidpath != defaultPidPath:
+            pidpath = defaultPidPath
         try:
             file = open(pidpath,fmReadWrite)
         except IOError:
-            pidpath =  TMP / DEFAULT_PID_FILE
-            file = open(pidpath,fmReadWrite)
+            stderr.write(r"pidfile $# can't be opened \n" % [pidpath])
     defer: close(file)
     glPidPath = pidpath
     result.pidfile = pidpath
@@ -74,13 +75,6 @@ proc log(self:Daemon, args:varargs[string, `$`]) =
     if self.verbose >= 1:
         echo join(args)
 
-# include "system/ansi_c"
-
-# proc atexit*(handler:proc()) {.importc:"atexit", header: "<stdlib.h>".}
-
-# proc run (self:Daemon,handler:proc ()) = discard
-
-
 proc delpid(){.noconv.} =
     var pid:int = -1
     try:
@@ -95,7 +89,6 @@ proc delpid(){.noconv.} =
 
 template onQuit*(handler:proc(){.noconv, locks: 0.}) :typed =
     bind glPidPath
-    # var fn:proc() = proc() = body
     addQuitProc(handler)
 
 proc daemonize(self: Daemon) =
@@ -112,6 +105,7 @@ proc daemonize(self: Daemon) =
     try:
         discard chdir(self.home_dir)
     except:
+        stderr.write("chdir failed: $# ($#)\n" % [$errno, getCurrentExceptionMsg()])
         discard
     discard setsid()
     discard umask(self.umask)
@@ -119,33 +113,19 @@ proc daemonize(self: Daemon) =
     # Do second fork
     try:
         pid = fork()
-    except OSError as e:
+    except OSError :
         stderr.write(
             "fork #2 failed: $# ($#)\n" % [$errno, getCurrentExceptionMsg()])
         quit(1)
     if pid > 0:
         # Exit from second parent
         quit(0)
-    # if platform != "darwin":  # This block breaks on OS X
-        # Redirect standard file descriptors
+
     self.stdout.flushFile()
     self.stderr.flushFile()
     discard reopen(self.stdin,STD_IN_LOG, fmRead)
     discard reopen(self.stdout,STD_OUT_LOG, fmAppend)
     discard reopen(self.stderr, STD_ERR_LOG,fmAppend)
-    # var se:File
-    
-    # if self.stderr:
-    # try:
-    #     discard reopen(self.stderr, STD_ERR_LOG,fmAppend, 0)
-    # except ValueError:
-    #     # Python 3 can't have unbuffered text I/O
-    #     discard reopen(self.stderr, STD_ERR_LOG,fmAppend, 1)
-    # except:
-    #     se = so
-    # discard dup2( c_fileno(self.stdin), c_fileno(stdin))
-    # discard dup2( c_fileno(self.stdout), c_fileno(stdout))
-    # discard dup2( c_fileno(self.stderr), c_fileno(stderr))
     
     onSignal(SIGTERM,SIGINT):
         # self.daemon_alive = false
@@ -168,7 +148,7 @@ proc daemonize(self: Daemon) =
     # Write pidfile
     # onQuit(mypidpath,handler)
     onQuit(delpid)
-        # delpid()
+    # delpid()
     # Make sure pid file is removed if we quit
 
     pid = getpid()
@@ -269,13 +249,24 @@ proc get_pid(self:Daemon):int =
     #     pid = nil
     return pid
 
+when defined(macosx): 
+    proc running(pid:int):bool =
+        try:
+            discard kill(Pid(pid),0)
+        except OSError:
+            discard
+        result = true
+else:
+    proc running(pid:int):bool =
+        result = existsFile("/proc/$#" % $pid)
+
 proc is_running*(self:Daemon):bool =
     let pid = self.get_pid()
 
     if pid == -1:
         self.log("Process is stopped")
         return false
-    elif existsFile("/proc/$#" % $pid): # mac has no /proc
+    elif running(pid): # mac has no /proc
         self.log("Process (pid $#) is running..." % $pid)
         return true
     else:
