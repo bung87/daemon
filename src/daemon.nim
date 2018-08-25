@@ -54,13 +54,16 @@ method log(self:Daemon, args:varargs[string, `$`]) =
     if self.verbose >= 1:
         echo join(args)
 
-include "system/ansi_c"
+# include "system/ansi_c"
+
+# proc atexit*(handler:proc()) {.importc:"atexit", header: "<stdlib.h>".}
+
 
 method daemonize(self:Daemon) =
     var pid:Pid 
     try:
         pid = fork()
-    except OSError :
+    except  :
         stderr.write("fork #1 failed: $# ($#)\n" % [$errno, getCurrentExceptionMsg()])
         exitnow(1)
     if pid > 0 :
@@ -101,9 +104,9 @@ method daemonize(self:Daemon) =
     #     discard reopen(self.stderr, STD_ERR_LOG,fmAppend, 1)
     # except:
     #     se = so
-    # discard dup2( c_fileno(si), c_fileno(stdin))
-    # discard dup2( c_fileno(so), c_fileno(stdout))
-    # discard dup2( c_fileno(se), c_fileno(stderr))
+    # discard dup2( c_fileno(self.stdin), c_fileno(stdin))
+    # discard dup2( c_fileno(self.stdout), c_fileno(stdout))
+    # discard dup2( c_fileno(self.stderr), c_fileno(stderr))
 
     onSignal(SIGTERM,SIGINT):
         # self.daemon_alive = false
@@ -111,27 +114,31 @@ method daemonize(self:Daemon) =
         exitnow(0)
 
     self.log("Started")
+    
     # Write pidfile
-    # atexit.register(
-    #     self.delpid)  # Make sure pid file is removed if we quit
-    pid = getpid()
-    try:
-        open(self.pidfile, fmWrite).write("$#\n" % $pid)
-    except:
-        self.pidfile = "/tmp" / pid_file
-        open(self.pidfile, fmWrite).write("$#\n" % $pid)
+    # closureScope:
+    #     myClosure = proc() = self.delpid
+    template delpid(self:Daemon) :proc() =
+        var pid:int = -1
+        try:
+            pid = parseInt(readFile(self.pidfile).strip())
+        except OSError as e:
+            if errno == ENOENT:
+                discard
+            else:
+                raise
+        if pid == getpid():
+            removeFile(self.pidfile)
+    
+    # atexit( self.delpid )  # Make sure pid file is removed if we quit
+    # # addQuitProc
+    # pid = getpid()
+    # try:
+    #     open(self.pidfile, fmWrite).write("$#\n" % $pid)
+    # except:
+    #     self.pidfile = "/tmp" / pid_file
+    #     open(self.pidfile, fmWrite).write("$#\n" % $pid)
 
-method delpid(self:Daemon) =
-    var pid:int = -1
-    try:
-        pid = parseInt(readFile(self.pidfile).strip())
-    except OSError as e:
-        if errno == ENOENT:
-            discard
-        else:
-            raise
-    if pid == getpid():
-        removeFile(self.pidfile)
 
 method run (self:Daemon) = discard
     
@@ -169,7 +176,7 @@ method stop(self:Daemon) =
         mpid = parseInt(readFile(self.pidfile).strip())
     except IOError:
         discard
-    if mpid != -1:
+    if mpid == -1:
         let message = "pidfile %s does not exist. Not running?\n"
         self.stderr.write(message % self.pidfile)
 
@@ -212,6 +219,8 @@ method get_pid(self:Daemon):int =
         pid = parseInt(readFile(self.pidfile).strip())
     except IOError:
         discard
+    except ValueError:
+        discard
     # except SystemExit:
     #     pid = nil
     return pid
@@ -233,7 +242,7 @@ when isMainModule:
     type MineDaemon = ref object of Daemon
     method run(self:MineDaemon) =
         while true:
-            echo 1
+            echo 3
             sleep(1)
     var d = newDaemon()
     d.start()
