@@ -29,6 +29,8 @@ type
 
     DaemonRef* = ref Daemon
 
+var glPidPath:string
+
 proc initDaemon*(pidfile:string = VARRUN / DEFAULT_PID_FILE, stdin:File = stdin,stdout:File=stdout,stderr:File=stderr,home_dir:string="",umask:Mode = 0o22,verbose:int = 1):Daemon{.noInit.}= 
     var 
         result = Daemon()
@@ -45,6 +47,7 @@ proc initDaemon*(pidfile:string = VARRUN / DEFAULT_PID_FILE, stdin:File = stdin,
             pidpath =  TMP / DEFAULT_PID_FILE
             file = open(pidpath,fmReadWrite)
     defer: close(file)
+    glPidPath = pidpath
     result.pidfile = pidpath
     result.stdin = stdin
     result.stdout = stdout
@@ -76,7 +79,7 @@ proc log(self:Daemon, args:varargs[string, `$`]) =
 # proc atexit*(handler:proc()) {.importc:"atexit", header: "<stdlib.h>".}
 
 # proc run (self:Daemon,handler:proc ()) = discard
-var glPidPath:string
+
 
 proc delpid(){.noconv.} =
     var pid:int = -1
@@ -87,6 +90,7 @@ proc delpid(){.noconv.} =
             discard
         else:
             raise
+    echo getpid(),pid
     if pid == getpid():
         removeFile(glPidPath)
 
@@ -95,7 +99,7 @@ template onQuit*(handler:proc(){.noconv, locks: 0.}) :typed =
     # var fn:proc() = proc() = body
     addQuitProc(handler)
 
-proc daemonize(self:Daemon) =
+proc daemonize(self: Daemon) =
     var pid:Pid 
     try:
         pid = fork()
@@ -143,7 +147,7 @@ proc daemonize(self:Daemon) =
     # discard dup2( c_fileno(self.stdin), c_fileno(stdin))
     # discard dup2( c_fileno(self.stdout), c_fileno(stdout))
     # discard dup2( c_fileno(self.stderr), c_fileno(stderr))
-
+    
     onSignal(SIGTERM,SIGINT):
         # self.daemon_alive = false
         echo "on signal"
