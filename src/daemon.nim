@@ -129,7 +129,6 @@ proc daemonize(self: Daemon) =
     
     onSignal(SIGTERM,SIGINT):
         # self.daemon_alive = false
-        echo "on signal"
         quit(0)
 
     self.log("Started")
@@ -187,7 +186,7 @@ proc start*(self:Daemon) =
     self.daemonize()
     self.handler()
 
-proc stop(self:Daemon) =
+proc stop*(self:Daemon) =
     discard """
     Stop the daemon
     """
@@ -230,14 +229,14 @@ proc stop(self:Daemon) =
 
     self.log("Stopped")
 
-proc restart(self:Daemon) =
+proc restart*(self:Daemon) =
     discard """
     Restart the daemon
     """
     self.stop()
     self.start()
 
-proc get_pid(self:Daemon):int =
+proc getPid*(self:Daemon):int =
     var pid = -1
     try:
         pid = parseInt(readFile(self.pidfile).strip())
@@ -261,7 +260,7 @@ else:
         result = existsFile("/proc/$#" % $pid)
 
 proc is_running*(self:Daemon):bool =
-    let pid = self.get_pid()
+    let pid = self.getPid()
 
     if pid == -1:
         self.log("Process is stopped")
