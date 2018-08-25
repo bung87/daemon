@@ -12,45 +12,62 @@ const
     STD_ERR_LOG = "daemon-nim-stderr.log"
     STD_OUT_LOG = "daemon-nim-stdout.log"
     STD_IN_LOG = "daemon-nim-stdin.log"
-    pid_file =  "daemon-nim.pid"
+    DEFAULT_PID_FILE =  "daemon-nim.pid"
+    TMP = "/tmp"
 
-type Daemon* = ref object of RootObj
-    # DaemonRef* = ref of Daemon
-    pidfile:string
-    stdin:File #=devnull
-    stdout:File #=devnull
-    stderr:File #=devnull,
-    home_dir:string #='.', 
-    umask:Mode #=0o22, 
-    verbose:int #=1,
-    daemon_alive:bool
-# ,stdin,stdout,stderr:string = DEVNULL,home_dir:string,umask:Mode = 0o22,verbose:int = 1
-method initDaemon*(self:Daemon,pidfile:string = VARRUN / pid_file, stdin:File = stdin,stdout:File=stdout,stderr:File=stderr,home_dir:string="",umask:Mode = 0o22,verbose:int = 1) =
-    # stdin,stdout,stderr:string = DEVNULL,\
-    # stdout:string = DEVNULL,\
-    # stderr:string = DEVNULL,\
-    # home_dir:string,\
-    # umask:Mode = 0o22,\
-    # verbose:int = 1): Daemon =
+type 
+    Daemon* = object of RootObj
+        pidfile:string
+        stdin:File
+        stdout:File
+        stderr:File
+        home_dir:string
+        umask:Mode
+        verbose:int
+        daemon_alive:bool
+        handler:proc() {.noconv.}
 
-    # result = Daemon()
+    DaemonRef* = ref Daemon
 
-    self.pidfile = pidfile
-    self.stdin = stdin
-    self.stdout = stdout
-    self.stderr = stderr
+proc initDaemon*(pidfile:string = VARRUN / DEFAULT_PID_FILE, stdin:File = stdin,stdout:File=stdout,stderr:File=stderr,home_dir:string="",umask:Mode = 0o22,verbose:int = 1):Daemon{.noInit.}= 
+    var 
+        result = Daemon()
+        pidpath = pidfile
+        file:File 
+    try:
+        file = open(pidpath,fmReadWrite)
+    except IOError:
+        if pidpath != VARRUN / DEFAULT_PID_FILE:
+            pidpath =  VARRUN / DEFAULT_PID_FILE
+        try:
+            file = open(pidpath,fmReadWrite)
+        except IOError:
+            pidpath =  TMP / DEFAULT_PID_FILE
+            file = open(pidpath,fmReadWrite)
+    defer: close(file)
+    result.pidfile = pidpath
+    result.stdin = stdin
+    result.stdout = stdout
+    result.stderr = stderr
     if home_dir.len > 0:
-        self.home_dir = home_dir
+        result.home_dir = home_dir
         try:
             setCurrentDir(home_dir)
         except OSError:
             discard
     else:
-        self.home_dir = getCurrentDir()
-    self.umask = umask
-    self.verbose = verbose
+        result.home_dir = getCurrentDir()
+    result.umask = umask
+    result.verbose = verbose
+    result.daemon_alive = true
+    return result
 
-method log(self:Daemon, args:varargs[string, `$`]) =
+# proc newDaemon[T](a:varargs[T]):DaemonRef = 
+#     new(result)
+#     for s in items(a):
+#         result[s] = s
+
+proc log(self:Daemon, args:varargs[string, `$`]) =
     if self.verbose >= 1:
         echo join(args)
 
@@ -58,17 +75,36 @@ method log(self:Daemon, args:varargs[string, `$`]) =
 
 # proc atexit*(handler:proc()) {.importc:"atexit", header: "<stdlib.h>".}
 
+# proc run (self:Daemon,handler:proc ()) = discard
+var glPidPath:string
 
-method daemonize(self:Daemon) =
+proc delpid(){.noconv.} =
+    var pid:int = -1
+    try:
+        pid = parseInt(readFile(glPidPath).strip())
+    except OSError as e:
+        if errno == ENOENT:
+            discard
+        else:
+            raise
+    if pid == getpid():
+        removeFile(glPidPath)
+
+template onQuit*(handler:proc(){.noconv, locks: 0.}) :typed =
+    bind glPidPath
+    # var fn:proc() = proc() = body
+    addQuitProc(handler)
+
+proc daemonize(self:Daemon) =
     var pid:Pid 
     try:
         pid = fork()
     except  :
         stderr.write("fork #1 failed: $# ($#)\n" % [$errno, getCurrentExceptionMsg()])
-        exitnow(1)
+        quit(1)
     if pid > 0 :
         # Exit first parent
-        exitnow(0)
+        quit(0)
     # Decouple from parent environment
     try:
         discard chdir(self.home_dir)
@@ -83,10 +119,10 @@ method daemonize(self:Daemon) =
     except OSError as e:
         stderr.write(
             "fork #2 failed: $# ($#)\n" % [$errno, getCurrentExceptionMsg()])
-        exitnow(1)
+        quit(1)
     if pid > 0:
         # Exit from second parent
-        exitnow(0)
+        quit(0)
     # if platform != "darwin":  # This block breaks on OS X
         # Redirect standard file descriptors
     self.stdout.flushFile()
@@ -111,38 +147,40 @@ method daemonize(self:Daemon) =
     onSignal(SIGTERM,SIGINT):
         # self.daemon_alive = false
         echo "on signal"
-        exitnow(0)
+        quit(0)
 
     self.log("Started")
     
+    # onQuit():
+    #     var pid1:int = -1
+    #     try:
+    #         pid1 = parseInt(readFile(pidpath).strip())
+    #     except OSError as e:
+    #         if errno == ENOENT:
+    #             discard
+    #         else:
+    #             raise
+    #     if pid1 == getpid():
+    #         removeFile(pidpath)
     # Write pidfile
-    # closureScope:
-    #     myClosure = proc() = self.delpid
-    template delpid(self:Daemon) :proc() =
-        var pid:int = -1
-        try:
-            pid = parseInt(readFile(self.pidfile).strip())
-        except OSError as e:
-            if errno == ENOENT:
-                discard
-            else:
-                raise
-        if pid == getpid():
-            removeFile(self.pidfile)
-    
-    # atexit( self.delpid )  # Make sure pid file is removed if we quit
-    # # addQuitProc
-    # pid = getpid()
-    # try:
-    #     open(self.pidfile, fmWrite).write("$#\n" % $pid)
-    # except:
-    #     self.pidfile = "/tmp" / pid_file
-    #     open(self.pidfile, fmWrite).write("$#\n" % $pid)
+    # onQuit(mypidpath,handler)
+    onQuit(delpid)
+        # delpid()
+    # Make sure pid file is removed if we quit
 
-
-method run (self:Daemon) = discard
+    pid = getpid()
+    var pifile:File
+    defer:close(pifile)
+    pifile = open(self.pidfile, fmWrite)
+    pifile.write("$#\n" % $pid)
     
-method start*(self:Daemon){.base.} =
+
+template daemonize*(self:Daemon, body: untyped) =
+    var handler:proc() {.noconv.} = proc () {.noconv.} = body
+    self.handler = handler
+    self.start()
+
+proc start*(self:Daemon) =
    
     self.log("Starting...")
     var mpid:int = -1
@@ -150,6 +188,9 @@ method start*(self:Daemon){.base.} =
     try:
         mpid = parseInt(readFile(self.pidfile).strip())
     except IOError:
+        let message = r"pidfile $# $#\n"
+        self.stderr.write(message % [self.pidfile, getCurrentExceptionMsg()])
+    except ValueError:
         discard
     # except SystemExit:
     #     discard
@@ -157,13 +198,13 @@ method start*(self:Daemon){.base.} =
     if mpid != -1:
         let message = r"pidfile $# already exists. Is it already running?\n"
         self.stderr.write(message % [self.pidfile])
-        exitnow(1)
+        quit(1)
 
     # Start the daemon
     self.daemonize()
-    self.run()
+    self.handler()
 
-method stop(self:Daemon) =
+proc stop(self:Daemon) =
     discard """
     Stop the daemon
     """
@@ -202,18 +243,18 @@ method stop(self:Daemon) =
                 removeFile(self.pidfile)
         else:
             echo repr(err)
-            exitnow(1)
+            quit(1)
 
     self.log("Stopped")
 
-method restart(self:Daemon) =
+proc restart(self:Daemon) =
     discard """
     Restart the daemon
     """
     self.stop()
     self.start()
 
-method get_pid(self:Daemon):int =
+proc get_pid(self:Daemon):int =
     var pid = -1
     try:
         pid = parseInt(readFile(self.pidfile).strip())
@@ -225,24 +266,15 @@ method get_pid(self:Daemon):int =
     #     pid = nil
     return pid
 
-method is_running*(self:Daemon):bool =
+proc is_running*(self:Daemon):bool =
     let pid = self.get_pid()
 
     if pid == -1:
         self.log("Process is stopped")
         return false
-    elif existsFile("/proc/$#" % $pid) :
+    elif existsFile("/proc/$#" % $pid): # mac has no /proc
         self.log("Process (pid $#) is running..." % $pid)
         return true
     else:
         self.log("Process (pid $#) is killed" % $pid)
         return false
-
-when isMainModule:
-    type MineDaemon = ref object of Daemon
-    method run(self:MineDaemon) =
-        while true:
-            echo 3
-            sleep(1)
-    var d = newDaemon()
-    d.start()

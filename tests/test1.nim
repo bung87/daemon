@@ -2,11 +2,10 @@ import daemon
 import os
 import posix
 
-type MineDaemon = ref object of Daemon
-method run(self:MineDaemon) =
+var d = initDaemon()
+daemonize(d):
+    echo d.pidfile
     while true:
-        echo self.is_running()
-        sleep(1)
-var d = new(MineDaemon)
-d.initDaemon()
-d.start()
+        
+        echo d.is_running()
+        sleep(2000)
