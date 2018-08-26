@@ -33,7 +33,9 @@ type
 
 var glPidPath:string
 
-proc initDaemon*(pidfile:string = defaultPidPath, stdin:File = stdin,stdout:File=stdout,stderr:File=stderr,home_dir:string="",umask:Mode = 0o22,verbose:int = 1):Daemon{.noInit.}= 
+proc initDaemon*(pidfile = defaultPidPath, 
+    stdin = stdin,stdout = stdout, stderr = stderr, 
+    home_dir = "", umask:Mode = 0o22, verbose = 1) : Daemon{.noInit.} = 
     var 
         result = Daemon()
         pidpath = pidfile
