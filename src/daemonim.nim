@@ -271,7 +271,7 @@ when defined(macosx):
         try:
             discard kill(Pid(pid),0)
         except OSError:
-            discard
+            return false
         result = true
 else:
     proc running(pid:int):bool =
