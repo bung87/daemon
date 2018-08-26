@@ -7,15 +7,16 @@ import posix
 import strutils
 
 const 
+    # defaultAppName = "daemonim"
     DEVNULL = "/dev/null"
-    VARRUN = "/var/run"
-    STD_ERR_LOG = "daemonim-stderr.log"
-    STD_OUT_LOG = "daemonim-stdout.log"
-    STD_IN_LOG = "daemonim-stdin.log"
-    DEFAULT_PID_FILE =  "daemonim.pid"
-    TMP = "/tmp"
-    defaultPidPath = when defined(macosx): TMP / DEFAULT_PID_FILE
-    else: VARRUN / DEFAULT_PID_FILE
+    # VARRUN = "/var/run"
+    # STD_ERR_LOG = "$#-stderr.log" % defaultAppName
+    # STD_OUT_LOG = "$#-stdout.log" % defaultAppName
+    # STD_IN_LOG = "$#-stdin.log" % defaultAppName
+    # DEFAULT_PID_FILE =  "$#.pid" % defaultAppName
+    # TMP = "/tmp"
+    # defaultPidPath = when defined(macosx): TMP / DEFAULT_PID_FILE
+    # else: VARRUN / DEFAULT_PID_FILE
     invalidPid = -1
 
 type 
@@ -34,24 +35,24 @@ type
 
 var glPidPath:string
 
-proc initDaemon*(pidfile = defaultPidPath, 
-    stdin = stdin, stdout = stdout, stderr = stderr, 
-    home_dir = "", umask:Mode = 0o22, verbose:range[0..3] = 0) : Daemon{.noInit.} = 
+proc init(pidfile:string , 
+    stdin , stdout , stderr:File,
+    home_dir :string, umask:Mode, verbose:range[0..3]):Daemon{.noInit.} =
     var 
         result = Daemon()
         pidpath = pidfile
-        file:File 
-    try:
-        file = open(pidpath,fmReadWrite)
-    except IOError:
-        if pidpath != defaultPidPath:
-            pidpath = defaultPidPath
-            try:
-                file = open(pidpath,fmReadWrite)
-            except IOError:
-                stderr.write(r"pidfile $# can't be opened \n" % [pidpath])
-                quit(1)
-    defer: close(file)
+        # file:File
+    # try:
+    #     file = open(pidpath,fmReadWrite)
+    # except IOError:
+    #     if pidpath != defaultPidPath:
+    #         pidpath = defaultPidPath
+    #         try:
+    #             file = open(pidpath,fmReadWrite)
+    #         except IOError:
+    #             stderr.write(r"pidfile $# can't be opened \n" % [pidpath])
+    #             quit(1)
+    # defer: close(file)
     glPidPath = pidpath
     result.pidfile = pidpath
     result.stdin = stdin
@@ -70,6 +71,18 @@ proc initDaemon*(pidfile = defaultPidPath,
     result.daemon_alive = true
     return result
 
+proc initDaemon*(pidfile:string , 
+    stdin = stdin, stdout = stdout, stderr = stderr, 
+    home_dir = ".", umask:Mode = 0o22, verbose:range[0..3] = 0) : Daemon{.noInit.} = 
+    return init(pidfile , stdin , stdout , stderr,home_dir,umask,verbose)
+
+proc initDaemon*(pidfile:string , 
+    stdin, stdout, stderr:string, 
+    home_dir = ".", umask:Mode = 0o22, verbose:range[0..3] = 0) : Daemon{.noInit.} = 
+    discard system.stdin.reopen(stdin,fmRead)
+    discard system.stdout.reopen(stdout,fmAppend)
+    discard system.stderr.reopen(stderr,fmAppend)
+    return init(pidfile , system.stdin , system.stdout , system.stderr,home_dir,umask,verbose)
 # proc newDaemon[T](a:varargs[T]):DaemonRef = 
 #     new(result)
 #     for s in items(a):
@@ -127,9 +140,10 @@ proc daemonize(self: Daemon) =
 
     self.stdout.flushFile()
     self.stderr.flushFile()
-    discard reopen(self.stdin,STD_IN_LOG, fmRead)
-    discard reopen(self.stdout,STD_OUT_LOG, fmAppend)
-    discard reopen(self.stderr, STD_ERR_LOG,fmAppend)
+
+    # discard posix.dup2(getFileHandle(self.stdin),getFileHandle(stdin))
+    # discard posix.dup2(getFileHandle(self.stdout), getFileHandle(stdout))
+    # discard posix.dup2(getFileHandle(self.stderr), getFileHandle(stderr))
     
     onSignal(SIGTERM,SIGINT):
         # self.daemon_alive = false
@@ -174,7 +188,7 @@ proc start*(self:Daemon) =
     try:
         mpid = parseInt(readFile(self.pidfile).strip())
     except IOError:
-        let message = r"pidfile $# $#\n"
+        let message = "pidfile $# $#\n"
         self.stderr.write(message % [self.pidfile, getCurrentExceptionMsg()])
     except ValueError:
         discard
@@ -182,7 +196,7 @@ proc start*(self:Daemon) =
     #     discard
 
     if mpid != invalidPid:
-        let message = r"pidfile $# already exists. Is it already running?\n"
+        let message = "pidfile $# already exists. Is it already running?\n"
         self.stderr.write(message % [self.pidfile])
         quit(1)
 
