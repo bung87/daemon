@@ -1,4 +1,4 @@
-# daemon
+# daemonim
 
 This package that will daemonize your program so it can continue running in the background. It works on Unix, Linux and OS X, creates a PID file and has standard commands (start, stop, restart) .
 
@@ -8,10 +8,8 @@ see also [PEP 3143](https://www.python.org/dev/peps/pep-3143/)
 
 ## Usage
 
-Define a class which inherits from `Daemon` and has a `run()` method (which is what will be called once the daemonization is completed.
-
 ```nim
-    import daemon
+    import daemonim
     import os
 
     var d = initDaemon()
