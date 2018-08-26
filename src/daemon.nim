@@ -43,10 +43,11 @@ proc initDaemon*(pidfile:string = defaultPidPath, stdin:File = stdin,stdout:File
     except IOError:
         if pidpath != defaultPidPath:
             pidpath = defaultPidPath
-        try:
-            file = open(pidpath,fmReadWrite)
-        except IOError:
-            stderr.write(r"pidfile $# can't be opened \n" % [pidpath])
+            try:
+                file = open(pidpath,fmReadWrite)
+            except IOError:
+                stderr.write(r"pidfile $# can't be opened \n" % [pidpath])
+                quit(1)
     defer: close(file)
     glPidPath = pidpath
     result.pidfile = pidpath
