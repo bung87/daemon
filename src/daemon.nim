@@ -16,6 +16,7 @@ const
     TMP = "/tmp"
     defaultPidPath = when defined(macosx): TMP / DEFAULT_PID_FILE
     else: VARRUN / DEFAULT_PID_FILE
+    invalidPid = -1
 
 type 
     Daemon* = object of RootObj
@@ -34,8 +35,8 @@ type
 var glPidPath:string
 
 proc initDaemon*(pidfile = defaultPidPath, 
-    stdin = stdin,stdout = stdout, stderr = stderr, 
-    home_dir = "", umask:Mode = 0o22, verbose = 1) : Daemon{.noInit.} = 
+    stdin = stdin, stdout = stdout, stderr = stderr, 
+    home_dir = "", umask:Mode = 0o22, verbose:range[0..3] = 0) : Daemon{.noInit.} = 
     var 
         result = Daemon()
         pidpath = pidfile
@@ -79,7 +80,7 @@ proc log(self:Daemon, args:varargs[string, `$`]) =
         echo join(args)
 
 proc delpid(){.noconv.} =
-    var pid:int = -1
+    var pid = invalidPid
     try:
         pid = parseInt(readFile(glPidPath).strip())
     except OSError as e:
@@ -168,7 +169,7 @@ template daemonize*(self:Daemon, body: untyped) =
 proc start*(self:Daemon) =
    
     self.log("Starting...")
-    var mpid:int = -1
+    var mpid = invalidPid
     # Check for a pidfile to see if the daemon already runs
     try:
         mpid = parseInt(readFile(self.pidfile).strip())
@@ -180,7 +181,7 @@ proc start*(self:Daemon) =
     # except SystemExit:
     #     discard
 
-    if mpid != -1:
+    if mpid != invalidPid:
         let message = r"pidfile $# already exists. Is it already running?\n"
         self.stderr.write(message % [self.pidfile])
         quit(1)
@@ -190,10 +191,10 @@ proc start*(self:Daemon) =
     self.handler()
 
 proc stop*(self:Daemon) =
-    discard """
+    ##[
     Stop the daemon
-    """
-    var mpid:int = -1
+    ]##
+    var mpid:int = invalidPid
     if self.verbose >= 1:
         self.log("Stopping...")
 
@@ -202,7 +203,7 @@ proc stop*(self:Daemon) =
         mpid = parseInt(readFile(self.pidfile).strip())
     except IOError:
         discard
-    if mpid == -1:
+    if mpid == invalidPid:
         let message = "pidfile %s does not exist. Not running?\n"
         self.stderr.write(message % self.pidfile)
 
@@ -233,14 +234,14 @@ proc stop*(self:Daemon) =
     self.log("Stopped")
 
 proc restart*(self:Daemon) =
-    discard """
+    ##[
     Restart the daemon
-    """
+    ]##
     self.stop()
     self.start()
 
 proc getPid*(self:Daemon):int =
-    var pid = -1
+    var pid = invalidPid
     try:
         pid = parseInt(readFile(self.pidfile).strip())
     except IOError:
@@ -265,7 +266,7 @@ else:
 proc is_running*(self:Daemon):bool =
     let pid = self.getPid()
 
-    if pid == -1:
+    if pid == invalidPid:
         self.log("Process is stopped")
         return false
     elif running(pid): # mac has no /proc
