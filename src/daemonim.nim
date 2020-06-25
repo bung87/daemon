@@ -4,6 +4,7 @@
 
 import os
 import posix
+import strformat
 import strutils
 
 const
@@ -96,7 +97,7 @@ proc delpid(){.noconv, locks: 0.} =
     var pid = invalidPid
     try:
         pid = parseInt(readFile(glPidPath).strip())
-    except OSError as e:
+    except OSError:
         if errno == ENOENT:
             discard
         else:
@@ -113,7 +114,7 @@ proc daemonize(self: Daemon) =
     try:
         pid = fork()
     except  :
-        stderr.write("fork #1 failed: $# ($#)\n" % [$errno, getCurrentExceptionMsg()])
+        stderr.writeLine(&"fork #1 failed: {errno} ({getCurrentExceptionMsg()})")
         quit(1)
     if pid > 0 :
         # Exit first parent
@@ -122,8 +123,7 @@ proc daemonize(self: Daemon) =
     try:
         discard chdir(self.home_dir)
     except:
-        stderr.write("chdir failed: $# ($#)\n" % [$errno, getCurrentExceptionMsg()])
-        discard
+        stderr.writeLine("chdir failed: {errno} ({getCurrentExceptionMsg})")
     discard setsid()
     discard umask(self.umask)
 
@@ -131,8 +131,7 @@ proc daemonize(self: Daemon) =
     try:
         pid = fork()
     except OSError :
-        stderr.write(
-            "fork #2 failed: $# ($#)\n" % [$errno, getCurrentExceptionMsg()])
+        stderr.writeLine(&"fork #2 failed: {errno} ({getCurrentExceptionMsg()})")
         quit(1)
     if pid > 0:
         # Exit from second parent
@@ -168,11 +167,9 @@ proc daemonize(self: Daemon) =
     # delpid()
     # Make sure pid file is removed if we quit
 
-    pid = getpid()
-    var pifile:File
-    defer:close(pifile)
-    pifile = open(self.pidfile, fmWrite)
-    pifile.write("$#\n" % $pid)
+    let pifile: File = open(self.pidfile, fmWrite)
+    defer: close(pifile)
+    pifile.writeLine(&"{getpid()}")
 
 
 template daemonize*(self:Daemon, body: untyped) =
@@ -188,16 +185,15 @@ proc start*(self:Daemon) =
     try:
         mpid = parseInt(readFile(self.pidfile).strip())
     except IOError:
-        let message = "pidfile $# $#\n"
-        self.stderr.write(message % [self.pidfile, getCurrentExceptionMsg()])
+        self.stderr.writeLine(&"pidfile {self.pidfile} {getCurrentExceptionMsg()}")
     except ValueError:
         discard
     # except SystemExit:
     #     discard
 
     if mpid != invalidPid:
-        let message = "pidfile $# already exists. Is it already running?\n"
-        self.stderr.write(message % [self.pidfile])
+        self.stderr.writeLine(
+          &"pidfile {self.pidfile} already exists. Is it already running?")
         quit(1)
 
     # Start the daemon
@@ -218,8 +214,7 @@ proc stop*(self:Daemon) =
     except IOError:
         discard
     if mpid == invalidPid:
-        let message = "pidfile %s does not exist. Not running?\n"
-        self.stderr.write(message % self.pidfile)
+        self.stderr.writeLine(&"pidfile {self.pidfile} does not exist. Not running?")
 
         # Just to be sure. A ValueError might occur if the PID file is
         # empty but does actually exist
@@ -275,7 +270,7 @@ when defined(macosx):
         result = true
 else:
     proc running(pid:int):bool =
-        result = existsFile("/proc/$#" % $pid)
+      result = existsFile(&"/proc/{pid}")
 
 proc is_running*(self:Daemon):bool =
     let pid = self.getPid()
@@ -284,8 +279,8 @@ proc is_running*(self:Daemon):bool =
         self.log("Process is stopped")
         return false
     elif running(pid): # mac has no /proc
-        self.log("Process (pid $#) is running..." % $pid)
+        self.log(&"Process (pid {pid}) is running...")
         return true
     else:
-        self.log("Process (pid $#) is killed" % $pid)
+        self.log(&"Process (pid {pid}) is killed")
         return false
