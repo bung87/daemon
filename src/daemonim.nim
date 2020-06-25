@@ -38,8 +38,8 @@ var glPidPath:string
 proc init(pidfile:string ,
   stdin , stdout , stderr:File,
   home_dir :string, umask:Mode, verbose:range[0..3]):Daemon{.noInit.} =
+  result = Daemon()
   var
-    result = Daemon()
     pidpath = pidfile
     # file:File
   # try:
