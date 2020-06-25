@@ -269,7 +269,7 @@ when defined(macosx):
     result = true
 else:
   proc running(pid:int):bool =
-    result = existsFile(&"/proc/{pid}")
+    result = existsFile(&"/proc/{pid}") or existsDir(&"/proc/{pid}")
 
 proc is_running*(self:Daemon):bool =
   let pid = self.getPid()
