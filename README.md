@@ -14,14 +14,15 @@ import daemonim
 import os
 
 const
-  DEVNULL = "/dev/null"
-  var d = initDaemon("/tmp/daemonim.pid", open(DEVNULL, fmRead),
-    open(DEVNULL, fmAppend), open(DEVNULL, fmAppend))
-  daemonize(d):
-    echo d.pidfile
-    while true:
-      echo d.is_running()
-      sleep(2000)
+  devnull = "/dev/null"
+
+var d = initDaemon("/tmp/daemonim.pid", open(devnull, fmRead),
+  open(devnull, fmAppend), open(devnull, fmAppend))
+daemonize(d):
+  echo d.pidfile
+  while true:
+    echo d.is_running()
+    sleep(2000)
 ```
 
 or
@@ -40,13 +41,13 @@ const
   STD_OUT_LOG = &"{defaultAppName}-stdout.log"
   STD_IN_LOG = &"{defaultAppName}-stdin.log"
 
-  var d2 = initDaemon(defaultPidPath, STD_IN_LOG, STD_OUT_LOG, STD_ERR_LOG)
-  # or var d2 = initDaemon(defaultPidPath)
-  daemonize(d2):
-    echo d2.pidfile
-    while true:
-      echo d2.is_running()
-      sleep(2000)
+var d2 = initDaemon(defaultPidPath, STD_IN_LOG, STD_OUT_LOG, STD_ERR_LOG)
+# or var d2 = initDaemon(defaultPidPath)
+daemonize(d2):
+  echo d2.pidfile
+  while true:
+    echo d2.is_running()
+    sleep(2000)
 ```
 
 ## Actions
