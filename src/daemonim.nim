@@ -17,42 +17,32 @@ const
   # TMP = "/tmp"
   # defaultPidPath = when defined(macosx): TMP / DEFAULT_PID_FILE
   # else: VARRUN / DEFAULT_PID_FILE
-  invalidPid = -1
+  invalidPid* = -1
 
 type
   Daemon* = object of RootObj
-    pidfile:string
-    stdin:File
-    stdout:File
-    stderr:File
-    home_dir:string
-    umask:Mode
-    verbose:int
-    daemon_alive:bool
-    handler:proc() {.noconv.}
+    pidfile*: string
+    stdin: File
+    stdout: File
+    stderr: File
+    home_dir: string
+    umask: Mode
+    verbose: int
+    daemon_alive: bool
+    handler*: proc() {.noconv.}
 
   DaemonRef* = ref Daemon
 
 var glPidPath:string
 
-proc init(pidfile:string ,
-  stdin , stdout , stderr:File,
-  home_dir :string, umask:Mode, verbose:range[0..3]):Daemon{.noInit.} =
+proc init(pidfile: string ,
+  stdin, stdout, stderr: File,
+  home_dir: string, umask: Mode, verbose: range[0..3]): Daemon {.noInit.} =
+
   result = Daemon()
   var
     pidpath = pidfile
-    # file:File
-  # try:
-  #   file = open(pidpath,fmReadWrite)
-  # except IOError:
-  #   if pidpath != defaultPidPath:
-  #     pidpath = defaultPidPath
-  #     try:
-  #       file = open(pidpath,fmReadWrite)
-  #     except IOError:
-  #       stderr.write(r"pidfile $# can't be opened \n" % [pidpath])
-  #       quit(1)
-  # defer: close(file)
+
   glPidPath = pidpath
   result.pidfile = pidpath
   result.stdin = stdin
@@ -69,33 +59,35 @@ proc init(pidfile:string ,
   result.umask = umask
   result.verbose = verbose
   result.daemon_alive = true
-  return result
 
-proc initDaemon*(pidfile:string ,
+proc `handler=`*(d: var Daemon, h: proc() {.noconv.}) =
+  d.handler = h
+
+proc initDaemon*(pidfile: string,
   stdin = stdin, stdout = stdout, stderr = stderr,
-  home_dir = ".", umask:Mode = 0o22, verbose:range[0..3] = 0) : Daemon{.noInit.} =
-  return init(pidfile , stdin , stdout , stderr,home_dir,umask,verbose)
+  home_dir = ".", umask: Mode = 0o22, verbose: range[0..3] = 0): Daemon {.noInit.} =
+  return init(pidfile, stdin, stdout, stderr, home_dir, umask, verbose)
 
-proc initDaemon*(pidfile:string ,
-  stdin, stdout, stderr:string,
-  home_dir = ".", umask:Mode = 0o22, verbose:range[0..3] = 0) : Daemon{.noInit.} =
-  discard system.stdin.reopen(stdin,fmRead)
-  discard system.stdout.reopen(stdout,fmAppend)
-  discard system.stderr.reopen(stderr,fmAppend)
-  return init(pidfile , system.stdin , system.stdout , system.stderr,home_dir,umask,verbose)
-# proc newDaemon[T](a:varargs[T]):DaemonRef =
-#   new(result)
-#   for s in items(a):
-#     result[s] = s
+proc initDaemon*(pidfile: string ,
+  stdin, stdout, stderr: string,
+  home_dir = ".", umask: Mode = 0o22, verbose: range[0..3] = 0): Daemon {.noInit.} =
+  doAssert system.stdin.reopen(stdin, fmRead)
+  doAssert system.stdout.reopen(stdout, fmAppend)
+  doAssert system.stderr.reopen(stderr, fmAppend)
+  return init(pidfile, system.stdin, system.stdout ,system.stderr, home_dir, umask, verbose)
 
-proc log(self:Daemon, args:varargs[string, `$`]) =
+proc log(self: Daemon, args: varargs[string, `$`]) =
   if self.verbose >= 1:
-    echo join(args)
+    self.stdout.writeLine join(args)
+    self.stdout.flushFile
 
 proc delpid(){.noconv, locks: 0.} =
   var pid = invalidPid
   try:
     pid = parseInt(readFile(glPidPath).strip())
+  except IOError:
+    # Pid file didn't exist
+    discard
   except OSError:
     if errno == ENOENT:
       discard
@@ -104,18 +96,18 @@ proc delpid(){.noconv, locks: 0.} =
   if pid == getpid():
     removeFile(glPidPath)
 
-template onQuit*(handler:proc(){.noconv, locks: 0.}) :typed =
-  bind glPidPath
+template onQuit*(handler: proc() {.noconv, locks: 0.}): typed =
+  bind glPidPath  # DEBUG: What for this capture?
   addQuitProc(handler)
 
 proc daemonize(self: Daemon) =
-  var pid:Pid
+  var pid: Pid
   try:
     pid = fork()
-  except  :
+  except:
     stderr.writeLine(&"fork #1 failed: {errno} ({getCurrentExceptionMsg()})")
     quit(1)
-  if pid > 0 :
+  if pid > 0:
     # Exit first parent
     quit(0)
   # Decouple from parent environment
@@ -143,7 +135,7 @@ proc daemonize(self: Daemon) =
   # discard posix.dup2(getFileHandle(self.stdout), getFileHandle(stdout))
   # discard posix.dup2(getFileHandle(self.stderr), getFileHandle(stderr))
 
-  onSignal(SIGTERM,SIGINT):
+  onSignal(SIGTERM, SIGINT):
     # self.daemon_alive = false
     quit(0)
 
@@ -170,14 +162,12 @@ proc daemonize(self: Daemon) =
   defer: close(pifile)
   pifile.writeLine(&"{getpid()}")
 
-
-template daemonize*(self:Daemon, body: untyped) =
-  var handler:proc() {.noconv.} = proc () {.noconv.} = body
+template daemonize*(self: Daemon, body: untyped) =
+  var handler: proc() {.noconv.} = proc () {.noconv.} = body
   self.handler = handler
   self.start()
 
-proc start*(self:Daemon) =
-
+proc start*(self: Daemon) =
   self.log("Starting...")
   var mpid = invalidPid
   # Check for a pidfile to see if the daemon already runs
@@ -199,11 +189,11 @@ proc start*(self:Daemon) =
   self.daemonize()
   self.handler()
 
-proc stop*(self:Daemon) =
+proc stop*(self: Daemon) =
   ##[
   Stop the daemon
   ]##
-  var mpid:int = invalidPid
+  var mpid: int = invalidPid
   if self.verbose >= 1:
     self.log("Stopping...")
 
@@ -248,7 +238,7 @@ proc restart*(self:Daemon) =
   self.stop()
   self.start()
 
-proc getPid*(self:Daemon):int =
+proc getPid*(self: Daemon): int =
   var pid = invalidPid
   try:
     pid = parseInt(readFile(self.pidfile).strip())
