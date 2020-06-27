@@ -1,0 +1,13 @@
+
+on: [push, pull_request]
+name: "aaa"
+jobs:
+  build:
+    runs-on: ubuntu-16.04
+    steps:
+    - uses: actions/checkout@master
+    - uses: jiro4989/setup-nim-action@v1
+      with:
+        nim-version: '1.2.0'
+#   - run: nimble build -Y
+    - run: nimble test -Y
