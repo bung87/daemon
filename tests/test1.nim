@@ -5,19 +5,6 @@ import os
 import strutils
 import strformat
 
-#const
-#    defaultAppName = "daemonim"
-#    DEVNULL = "/dev/null"
-#    VARRUN = "/var/run"
-#    STD_ERR_LOG = "$#-stderr.log" % defaultAppName
-#    STD_OUT_LOG = "$#-stdout.log" % defaultAppName
-#    STD_IN_LOG = "$#-stdin.log" % defaultAppName
-#    DEFAULT_PID_FILE =  "$#.pid" % defaultAppName
-#    TMP = "/tmp"
-#    defaultPidPath = when defined(macosx): TMP / DEFAULT_PID_FILE
-#    else: VARRUN / DEFAULT_PID_FILE
-
-
 suite "Object Daemon stuff":
   setup:
     let pidfile: string = currentSourcePath.parentDir / "tests.pid"

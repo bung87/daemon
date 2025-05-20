@@ -1,23 +1,11 @@
 # daemonim
-# Copyright zhoupeng
+# Copyright bung
 # daemonizer for Unix, Linux and OS X
 
-import os
-import posix
-import strutils
-import strformat
+import std/[os, posix, exitprocs, strutils, strformat]
 
 const
-  # defaultAppName = "daemonim"
   DEVNULL = "/dev/null"
-  # VARRUN = "/var/run"
-  # STD_ERR_LOG = "$#-stderr.log" % defaultAppName
-  # STD_OUT_LOG = "$#-stdout.log" % defaultAppName
-  # STD_IN_LOG = "$#-stdin.log" % defaultAppName
-  # DEFAULT_PID_FILE =  "$#.pid" % defaultAppName
-  # TMP = "/tmp"
-  # defaultPidPath = when defined(macosx): TMP / DEFAULT_PID_FILE
-  # else: VARRUN / DEFAULT_PID_FILE
   invalidPid* = -1
 
 type
@@ -72,6 +60,12 @@ proc initDaemon*(pidfile: string,
 proc initDaemon*(pidfile: string ,
   stdin, stdout, stderr: string,
   home_dir = ".", umask: Mode = 0o22, verbose: range[0..3] = 0): Daemon {.noInit.} =
+  # Create parent directories for all required files
+  let paths = [stdin, stdout, stderr, pidfile]
+  for path in paths:
+    let dir = splitFile(path).dir
+    if dir.len > 0 and not dirExists(dir):
+      createDir(dir)
   doAssert system.stdin.reopen(stdin, fmRead)
   doAssert system.stdout.reopen(stdout, fmAppend)
   doAssert system.stderr.reopen(stderr, fmAppend)
@@ -82,7 +76,7 @@ proc log(self: Daemon, args: varargs[string, `$`]) =
     self.stdout.writeLine join(args)
     self.stdout.flushFile
 
-proc delpid(){.noconv, locks: 0.} =
+proc delpid(){.noconv.} =
   var pid = invalidPid
   try:
     pid = parseInt(readFile(glPidPath).strip())
@@ -97,9 +91,9 @@ proc delpid(){.noconv, locks: 0.} =
   if pid == getpid():
     removeFile(glPidPath)
 
-template onQuit*(handler: proc() {.noconv, locks: 0.}): typed =
+template onQuit*(handler: proc() {.noconv.}): typed =
   bind glPidPath  # DEBUG: What for this capture?
-  addQuitProc(handler)
+  exitprocs.addExitProc(handler)
 
 proc daemonize(self: Daemon) =
   var pid: Pid
@@ -113,7 +107,7 @@ proc daemonize(self: Daemon) =
     quit(0)
   # Decouple from parent environment
   try:
-    discard chdir(self.home_dir)
+    discard chdir(self.home_dir.cstring)
   except:
     stderr.writeLine("chdir failed: {errno} ({getCurrentExceptionMsg})")
   discard setsid()
@@ -208,7 +202,7 @@ proc stop*(self: Daemon) =
 
     # Just to be sure. A ValueError might occur if the PID file is
     # empty but does actually exist
-    if existsFile(self.pidfile) :
+    if fileExists(self.pidfile) :
       removeFile(self.pidfile)
 
     return  # Not an error in a restart
@@ -224,7 +218,7 @@ proc stop*(self: Daemon) =
         discard kill(getPid(), SIGHUP)
   except OSError as err:
     if errno == ESRCH:
-      if existsFile(self.pidfile) :
+      if fileExists(self.pidfile) :
         removeFile(self.pidfile)
     else:
       echo repr(err)

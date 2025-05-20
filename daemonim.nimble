@@ -1,7 +1,7 @@
 # Package
 
-version       = "0.2.0"
-author        = "zhoupeng"
+version       = "0.2.1"
+author        = "bung"
 description   = "daemonizer for Unix, Linux and OS X"
 license       = "MIT"
 srcDir        = "src"
